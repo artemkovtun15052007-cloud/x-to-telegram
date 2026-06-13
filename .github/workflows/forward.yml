@@ -1,0 +1,55 @@
+name: X to Telegram
+
+on:
+  schedule:
+    # Каждые 5 минут. GitHub может задержать запуск на несколько минут —
+    # это нормально и укладывается в целевые 2-7 мин в среднем.
+    - cron: "*/5 * * * *"
+  workflow_dispatch: {}   # позволяет запустить вручную кнопкой в Actions
+
+# Не даём двум запускам идти одновременно (иначе возможны дубли).
+concurrency:
+  group: x-to-telegram
+  cancel-in-progress: false
+
+permissions:
+  contents: write   # нужно, чтобы коммитить state.json обратно в репозиторий
+
+jobs:
+  forward:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install deps
+        run: pip install -r requirements.txt
+
+      - name: Run forwarder
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          ACCOUNTS: ${{ vars.ACCOUNTS }}
+          SOURCE_MODE: ${{ vars.SOURCE_MODE }}
+          RSS_FEEDS: ${{ vars.RSS_FEEDS }}
+          TRANSLATE: ${{ vars.TRANSLATE }}
+          SRC_LANG: ${{ vars.SRC_LANG }}
+          DST_LANG: ${{ vars.DST_LANG }}
+        run: python forward.py
+
+      - name: Commit state
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if ! git diff --quiet -- state.json; then
+            git add state.json
+            git commit -m "update state [skip ci]"
+            git push
+          else
+            echo "state.json не менялся — коммит не нужен"
+          fi
